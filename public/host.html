@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bilgi Yarışması - Ana Ekran</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="host-view">
+    <div class="host-container">
+        <!-- Header -->
+        <header class="host-header">
+            <h1>🎮 BEN BİLMEM EŞİM BİLİR</h1>
+            <div class="game-status">
+                <span id="gameStatus">Oyuncular bekleniyor...</span>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Left Sidebar - Player List & Scores -->
+            <aside class="players-sidebar">
+                <h2>Oyuncular</h2>
+                <div id="playersList" class="players-list">
+                    <p class="waiting-message">Oyuncular bekleniyor...</p>
+                </div>
+                <button id="startGameBtn" class="btn btn-primary" style="display: none;">Oyunu Başlat</button>
+            </aside>
+
+            <!-- Center - Question Board -->
+            <main class="question-board">
+                <div id="waitingScreen" class="waiting-screen">
+                    <div class="logo-container">
+                        <div class="logo-circle">🎯</div>
+                        <h2>Ben Bilmem Eşim Bilir'e Hoş Geldiniz!</h2>
+                        <p>Oyuncular buradan katılabilir:</p>
+                        <div class="join-code" id="joinUrl">Yükleniyor...</div>
+                        <p class="instruction">QR okutun veya mobil cihazlardan URL'yi girin</p>
+                    </div>
+                </div>
+
+                <div id="turnScreen" class="turn-screen" style="display: none;">
+                    <div class="turn-info">
+                        <h2>Sıradaki Oyuncu</h2>
+                        <div class="current-player" id="currentPlayerName">Oyuncu Adı</div>
+                        <p class="instruction">Kategori seçimi bekleniyor...</p>
+                    </div>
+                </div>
+
+                <div id="questionScreen" class="question-screen" style="display: none;">
+                    <div class="question-header">
+                        <div class="question-meta">
+                            <span class="category-badge" id="questionCategory">Kategori</span>
+                            <span class="difficulty-badge" id="questionDifficulty">Kolay</span>
+                            <span class="points-badge" id="questionPoints">10 puan</span>
+                        </div>
+                        <div class="timer-container">
+                            <div class="timer" id="timer">10</div>
+                            <div class="timer-bar-container">
+                                <div class="timer-bar" id="timerBar"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="question-content">
+                        <h3 id="questionText">Soru metni burada görünecek</h3>
+                    </div>
+
+                    <div class="options-grid" id="optionsGrid">
+                        <div class="option" data-option="A">
+                            <span class="option-letter">A</span>
+                            <span class="option-text">Seçenek A</span>
+                        </div>
+                        <div class="option" data-option="B">
+                            <span class="option-letter">B</span>
+                            <span class="option-text">Seçenek B</span>
+                        </div>
+                        <div class="option" data-option="C">
+                            <span class="option-letter">C</span>
+                            <span class="option-text">Seçenek C</span>
+                        </div>
+                        <div class="option" data-option="D">
+                            <span class="option-letter">D</span>
+                            <span class="option-text">Seçenek D</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="resultScreen" class="result-screen" style="display: none;">
+                    <div class="result-content">
+                        <div class="result-icon" id="resultIcon">✓</div>
+                        <h2 id="resultMessage">Doğru!</h2>
+                        <div class="result-details" id="resultDetails"></div>
+                        <div class="correct-answer-display" id="correctAnswerDisplay"></div>
+                    </div>
+                </div>
+
+                <div id="endScreen" class="end-screen" style="display: none;">
+                    <div class="trophy">🏆</div>
+                    <h2>Oyun Bitti!</h2>
+                    <div class="winner-display" id="winnerDisplay"></div>
+                    <div class="final-rankings" id="finalRankings"></div>
+                    <button class="btn btn-primary" onclick="location.reload()">Yeni Oyun</button>
+                </div>
+            </main>
+
+            <!-- Right Sidebar - Activity Feed -->
+            <aside class="activity-feed">
+                <h2>Aktivite Akışı</h2>
+                <div id="activityLog" class="activity-log"></div>
+            </aside>
+        </div>
+
+        <!-- Notifications -->
+        <div id="notification" class="notification"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let gameStarted = false;
+
+        // Join as host
+        socket.emit('joinAsHost');
+
+        // Display connection URL
+        const hostname = window.location.hostname;
+        const port = window.location.port;
+        const playerUrl = `http://${hostname}${port ? ':' + port : ''}/player`;
+        document.getElementById('joinUrl').textContent = playerUrl;
+
+        // Host connected
+        socket.on('hostConnected', (data) => {
+            addActivity('🎮 Sunucu bağlandı - Oyuncular bekleniyor');
+        });
+
+        // Player list update
+        socket.on('playerListUpdate', (data) => {
+            updatePlayersList(data.players);
+            
+            if (data.totalPlayers >= 2 && !gameStarted) {
+                document.getElementById('startGameBtn').style.display = 'block';
+            }
+        });
+
+        // Start game button
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            socket.emit('startGame');
+        });
+
+        // Game started
+        socket.on('gameStarted', (data) => {
+            gameStarted = true;
+            document.getElementById('waitingScreen').style.display = 'none';
+            document.getElementById('turnScreen').style.display = 'flex';
+            document.getElementById('gameStatus').textContent = 'Oyun Devam Ediyor';
+            document.getElementById('startGameBtn').style.display = 'none';
+            
+            updateCurrentTurn(data.currentPlayerName);
+            updatePlayersList(data.players);
+            addActivity(`🎮 Oyun Başladı! ${data.currentPlayerName} sırada`);
+        });
+
+        // New turn
+        socket.on('newTurn', (data) => {
+            showScreen('turnScreen');
+            updateCurrentTurn(data.currentPlayerName);
+            updatePlayersList(data.players);
+            addActivity(`🔄 ${data.currentPlayerName} sırada`);
+        });
+
+        // Question selected
+        socket.on('questionSelected', (data) => {
+            showScreen('questionScreen');
+            displayQuestion(data);
+            const diffText = data.difficulty === 'easy' ? 'KOLAY' : data.difficulty === 'medium' ? 'ORTA' : 'ZOR';
+            addActivity(`❓ ${data.category} - ${diffText} (${data.points}${data.doubleActive ? 'x2' : ''} puan)`);
+        });
+
+        // Timer update
+        socket.on('timerUpdate', (data) => {
+            updateTimer(data.timeLeft);
+        });
+
+        // Joker used
+        socket.on('jokerUsed', (data) => {
+            const jokerNames = {
+                'Double Trouble': 'Çift Bela',
+                'Extra Time': 'Ekstra Süre',
+                'Point Theft': 'Puan Hırsızlığı'
+            };
+            showNotification(`🃏 ${data.playerName} ${jokerNames[data.jokerType] || data.jokerType} kullandı!`, 'info');
+            addActivity(`🃏 ${data.playerName}: ${jokerNames[data.jokerType] || data.jokerType}`);
+        });
+
+        // Answer result
+        socket.on('answerResult', (data) => {
+            if (data.correct) {
+                showNotification(`✓ ${data.playerName} doğru cevap verdi! +${data.points} puan`, 'success');
+                addActivity(`✓ ${data.playerName} +${data.points} puan (${data.newScore} toplam)`);
+            } else {
+                showNotification(`✗ ${data.playerName} yanlış cevap verdi${data.strikes ? ` (Uyarı ${data.strikes}/3)` : ''}`, 'error');
+                addActivity(`✗ ${data.playerName} yanlış${data.strikes ? ` (Uyarı ${data.strikes}/3)` : ''}`);
+            }
+            updatePlayersList();
+        });
+
+        // Strike penalty
+        socket.on('strikePenalty', (data) => {
+            showNotification(`⚠️ ${data.playerName} 3 uyarı aldı! -${data.penalty} puan cezası`, 'warning');
+            addActivity(`⚠️ ${data.playerName} CEZA -${data.penalty} puan`);
+        });
+
+        // Point theft
+        socket.on('pointTheftUsed', (data) => {
+            showNotification(`🎭 ${data.thiefName}, ${data.victimName}'den ${data.stolenPoints} puan çaldı!`, 'special');
+            addActivity(`🎭 Puan Hırsızlığı! ${data.thiefName}, ${data.victimName}'den ${data.stolenPoints} puan çaldı`);
+        });
+
+        // Buzz winner
+        socket.on('buzzWinner', (data) => {
+            showNotification(`🔔 ${data.playerName} ilk basan oldu!`, 'info');
+            addActivity(`🔔 ${data.playerName} bastı!`);
+        });
+
+        // Show correct answer
+        socket.on('showCorrectAnswer', (data) => {
+            highlightCorrectAnswer(data.correctAnswer);
+            setTimeout(() => {
+                showScreen('resultScreen');
+                displayResult(data);
+            }, 1500);
+        });
+
+        // Game ended
+        socket.on('gameEnded', (data) => {
+            showScreen('endScreen');
+            displayWinner(data);
+            addActivity(`🏆 ${data.winner.name} KAZANDI ${data.winner.score} puanla!`);
+        });
+
+        // Error handling
+        socket.on('error', (data) => {
+            showNotification(data.message, 'error');
+        });
+
+        // Player disconnected
+        socket.on('playerDisconnected', (data) => {
+            showNotification(data.message, 'warning');
+            addActivity(`👋 ${data.message}`);
+        });
+
+        // Helper Functions
+        function updatePlayersList(players) {
+            const list = document.getElementById('playersList');
+            if (!players || players.length === 0) {
+                list.innerHTML = '<p class="waiting-message">Oyuncular bekleniyor...</p>';
+                return;
+            }
+
+            list.innerHTML = players.map(player => `
+                <div class="player-card ${player.isActive ? 'active' : ''}">
+                    <div class="player-header">
+                        <span class="player-name">${player.name}</span>
+                        ${player.isActive ? '<span class="active-indicator">🎯</span>' : ''}
+                    </div>
+                    <div class="player-score">${player.score} puan</div>
+                    <div class="player-stats">
+                        <span class="stat">S: ${player.questionsAsMainPlayer}/14</span>
+                        ${player.strikes > 0 ? `<span class="strike-indicator">⚠️ ${player.strikes}</span>` : ''}
+                    </div>
+                    <div class="player-jokers">
+                        <span class="joker ${player.jokers.double ? 'active' : 'used'}" title="Çift Bela">×2</span>
+                        <span class="joker ${player.jokers.extraTime ? 'active' : 'used'}" title="Ekstra Süre">⏱️</span>
+                        <span class="joker ${player.jokers.pointTheft ? 'active' : 'used'}" title="Puan Hırsızlığı">🎭</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateCurrentTurn(playerName) {
+            document.getElementById('currentPlayerName').textContent = playerName;
+        }
+
+        function displayQuestion(data) {
+            document.getElementById('questionCategory').textContent = data.category;
+            const diffText = data.difficulty === 'easy' ? 'KOLAY' : data.difficulty === 'medium' ? 'ORTA' : 'ZOR';
+            document.getElementById('questionDifficulty').textContent = diffText;
+            document.getElementById('questionDifficulty').className = `difficulty-badge ${data.difficulty}`;
+            document.getElementById('questionPoints').textContent = `${data.points}${data.doubleActive ? ' x2' : ''} puan`;
+            document.getElementById('questionText').textContent = data.question.text;
+
+            const optionsGrid = document.getElementById('optionsGrid');
+            const options = optionsGrid.querySelectorAll('.option');
+            options.forEach((option, index) => {
+                const letter = String.fromCharCode(65 + index);
+                option.querySelector('.option-text').textContent = data.question.options[letter];
+                option.className = 'option';
+            });
+        }
+
+        function updateTimer(timeLeft) {
+            const timerEl = document.getElementById('timer');
+            const timerBar = document.getElementById('timerBar');
+            
+            timerEl.textContent = timeLeft;
+            
+            // Animate timer bar
+            const questionScreen = document.getElementById('questionScreen');
+            if (questionScreen.style.display !== 'none') {
+                const totalTime = parseInt(timerEl.dataset.totalTime) || 20;
+                const percentage = (timeLeft / totalTime) * 100;
+                timerBar.style.width = percentage + '%';
+                
+                if (timeLeft <= 5) {
+                    timerEl.classList.add('warning');
+                } else {
+                    timerEl.classList.remove('warning');
+                }
+            }
+        }
+
+        function highlightCorrectAnswer(correctAnswer) {
+            const options = document.querySelectorAll('.option');
+            options.forEach(option => {
+                if (option.dataset.option === correctAnswer) {
+                    option.classList.add('correct');
+                }
+            });
+        }
+
+        function displayResult(data) {
+            document.getElementById('correctAnswerDisplay').innerHTML = `
+                <p class="correct-label">Doğru Cevap: <strong>${data.correctAnswer}</strong></p>
+                ${data.explanation ? `<p class="explanation">${data.explanation}</p>` : ''}
+            `;
+        }
+
+        function displayWinner(data) {
+            document.getElementById('winnerDisplay').innerHTML = `
+                <h3>${data.winner.name}</h3>
+                <p class="winner-score">${data.winner.score} puan</p>
+            `;
+
+            const rankings = data.finalScores.sort((a, b) => b.score - a.score);
+            document.getElementById('finalRankings').innerHTML = `
+                <h3>Final Sıralaması</h3>
+                ${rankings.map((player, index) => `
+                    <div class="ranking-item">
+                        <span class="rank">${index + 1}</span>
+                        <span class="player-name">${player.name}</span>
+                        <span class="score">${player.score} puan</span>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function showScreen(screenId) {
+            ['waitingScreen', 'turnScreen', 'questionScreen', 'resultScreen', 'endScreen'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+            document.getElementById(screenId).style.display = 'flex';
+        }
+
+        function addActivity(message) {
+            const log = document.getElementById('activityLog');
+            const timestamp = new Date().toLocaleTimeString('tr-TR');
+            const entry = document.createElement('div');
+            entry.className = 'activity-entry';
+            entry.innerHTML = `<span class="timestamp">${timestamp}</span> ${message}`;
+            log.insertBefore(entry, log.firstChild);
+
+            // Keep only last 20 entries
+            while (log.children.length > 20) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
